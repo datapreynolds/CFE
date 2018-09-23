@@ -1,4 +1,4 @@
-# CFE
+﻿# CFE
 CFE Contest Repository
 
 Project codes must be written in R or Microsoft SQL. 
@@ -9,3 +9,5 @@ Please do your best to follow the style guide here:
 https://google.github.io/styleguide/Rguide.xml
 
 Edited in Justin's notepad++
+
+The growing popularity of country music is fueled by the many new stars and new sounds coming onto the scene. There's more crossover - more of that old 'rock and roll' sound (rock, after all, was born out of country music).
