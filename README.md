@@ -7,3 +7,5 @@ Code file types should be compatible with the software used (example R file shou
 The code file will be done in .R
 Please do your best to follow the style guide here:
 https://google.github.io/styleguide/Rguide.xml
+
+Edited in Justin's notepad++
