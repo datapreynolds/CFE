@@ -3,6 +3,7 @@ title: "CFE_Competition"
 <<<<<<< HEAD
 subtitle "Blue Team Rules"
 =======
+subtitle: "Red Team Rules"
 >>>>>>> a03673101a0fb1deddc7d021e378eac8f421b118
 output: html_document
 ---
