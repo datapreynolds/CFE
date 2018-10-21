@@ -18,11 +18,19 @@ train_fp <- ""		#The filepath of the training data
 train <- read_csv(train_fp)
 ```
 
-Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Need to determine whether to treat these as null or fix the import routine to include them.
+```{r data cleaning}
+train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/%Y'),
+                      CoMonthlyLiability = as.numeric(CoMonthlyLiability),
+                      CoMonthlyRent = as.numeric(CoMonthlyRent),
+                      isNewVehicle = (isNewVehicle == 'Y'),
+                      MemberIndicator = (MemberIndicator == 'Y'),
+                      CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
+```
+Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
 
 ```{r monthly loan approval rate}
 monthly_data <- train %>%
-	mutate(AppReceiveMonth = floor_date(as.Date(AppReceiveDate, format = '%m/%d/%Y'), unit = 'month')) %>%
+	mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month')) %>%
 	group_by(AppReceiveMonth) %>%
 	summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
 

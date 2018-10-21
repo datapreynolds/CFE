@@ -8,8 +8,6 @@ The code file will be done in .R
 Please do your best to follow the style guide here:
 https://google.github.io/styleguide/Rguide.xml
 
-
-I'm creating a new branch.  You could say I'm a branch manager.
 Edited in Justin's notepad++
-Testing modification 
 
+The growing popularity of country music is fueled by the many new stars and new sounds coming onto the scene. There's more crossover - more of that old 'rock and roll' sound (rock, after all, was born out of country music).
