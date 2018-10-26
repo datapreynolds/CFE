@@ -11,7 +11,7 @@ library(lubridate)
 ```
 
 ```{r config}
-train_fp <- ""		#The filepath of the training data
+train_fp <- "C:/Users/Quinton/Incoming/UCF Dataset 2018 - Training set.csv"		#The filepath of the training data
 ```
 
 ```{r data import}
@@ -37,4 +37,12 @@ monthly_data <- train %>%
 ggplot(monthly_data, mapping = aes(AppReceiveMonth, ApprovalRate)) +
 	geom_line() +
 	coord_cartesian(ylim = c(0,1), expand = FALSE)
+```
+
+```{r make plots}
+undecicded_data <- train %>%
+  filter(VehicleMake == 'UNDECIDED', VehicleYear < 100)
+
+ggplot(undecicded_data, aes(AppReceiveDate, VehicleYear, color = isNewVehicle)) +
+  geom_point()
 ```
