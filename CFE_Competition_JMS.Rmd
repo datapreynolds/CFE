@@ -1,0 +1,52 @@
+---
+title: "CFE_Competition"
+subtitle "Blue Team Rules"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r config}
+# train_fp <- "C:/Users/Quinton/Incoming/UCF Dataset 2018 - Training set.csv"		#The filepath of the training data
+
+train_fp <- "C:/Users/Jusitn/Documents/R/STA6714_DataPrep/CFE-Local/UCF Dataset 2018 - Training set.csv"		#The filepath of the training data
+```
+
+```{r data import}
+train <- read_csv(train_fp)
+```
+
+```{r data cleaning}
+train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/%Y'),
+                      CoMonthlyLiability = as.numeric(CoMonthlyLiability),
+                      CoMonthlyRent = as.numeric(CoMonthlyRent),
+                      isNewVehicle = (isNewVehicle == 'Y'),
+                      MemberIndicator = (MemberIndicator == 'Y'),
+                      CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
+str_replace()
+
+```
+Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
+
+```{r monthly loan approval rate}
+monthly_data <- train %>%
+	mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month')) %>%
+	group_by(AppReceiveMonth) %>%
+	summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
+
+ggplot(monthly_data, mapping = aes(AppReceiveMonth, ApprovalRate)) +
+	geom_line() +
+	coord_cartesian(ylim = c(0,1), expand = FALSE)
+```
+
+```{r make plots}
+undecicded_data <- train %>%
+  filter(VehicleMake == 'UNDECIDED', VehicleYear < 100)
+
+ggplot(undecicded_data, aes(AppReceiveDate, VehicleYear, color = isNewVehicle)) +
+  geom_point()
+```
