@@ -46,3 +46,19 @@ undecicded_data <- train %>%
 ggplot(undecicded_data, aes(AppReceiveDate, VehicleYear, color = isNewVehicle)) +
   geom_point()
 ```
+
+```{r credit/bankruptcy scores vs approval}
+ggplot(train, aes(ModifiedCreditScore, ModifiedBankruptcyScore, color = LoanStatus)) + geom_point()
+```
+
+```{r income vs approval}
+ggplot(train, aes(log(1 + PrimeMonthlyIncome), log(1 + CototalMonthlyIncome), color = LoanStatus)) + geom_point()
+```
+
+```{r income/expenses and loan amount vs approval}
+ggplot(train, aes(log(1 + TotalMonthlyIncome - TotalMonthlyDebtBeforeLoan - PrimeMonthlyRent - PrimeMonthlyLiability), log(1 + AmountRequested), color = LoanStatus)) + geom_point()
+```
+
+```{r loan amount vs vehicle value}
+ggplot(train, aes(log(1 + AmountRequested), log(1 + TotalVehicleValue), color = LoanStatus)) + geom_point()
+```
