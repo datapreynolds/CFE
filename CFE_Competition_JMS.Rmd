@@ -27,7 +27,8 @@ train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/
                       isNewVehicle = (isNewVehicle == 'Y'),
                       MemberIndicator = (MemberIndicator == 'Y'),
                       CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
-str_replace()
+maker<- train$VehicleMake
+
 
 ```
 Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
