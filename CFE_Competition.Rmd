@@ -20,16 +20,50 @@ train <- read_csv(train_fp)
 
 ```{r data cleaning}
 train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/%Y'),
+  LTV = as.numeric(LTV),
   CoMonthlyLiability = replace(as.numeric(CoMonthlyLiability), is.na(as.numeric(CoMonthlyLiability)), 0),
   CoMonthlyRent = replace(as.numeric(CoMonthlyRent), is.na(as.numeric(CoMonthlyRent)), 0),
+  DownPayment = replace(DownPayment, is.na(DownPayment), 0),
+  OccupancyStatus = replace(OccupancyStatus, is.na(OccupancyStatus), 'OTHER'),
   isNewVehicle = (isNewVehicle == 'Y'),
   MemberIndicator = (MemberIndicator == 'Y'),
   CoApplicantIndicator = (CoApplicantIndicator == 'Y'),
   IsBalanced = (TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - TotalMonthlyDebtBeforeLoan - EstimatedMonthlyPayment > 0),
   IsBalanced = replace(IsBalanced, is.na(IsBalanced), FALSE),
-  NoCredit = (ModifiedCreditScore == 0))
+  NoCredit = (ModifiedCreditScore == 0),
+  BadDTI = (DTI < 0.05 | DTI > 0.5 | is.na(DTI)))
 ```
 Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
+
+```{r loan decider}
+LoanDecider_validation <- function(model, data, lower = 0.1, upper = 0.9) {
+
+	actual <- data$LoanStatus
+
+	probabilities <- 1/(1 + exp(-predict(model, newdata = data)))
+	
+	decisions <- probabilities %>%
+		replace(list = (probabilities > upper), values = "Approved") %>%
+		replace(list = (probabilities < lower), values = "Denied") %>%
+		replace(list = (probabilities >= lower & probabilities <= upper), values = "No Decision")
+	
+	automation_level <- sum(decisions == 'Approved' | decisions == 'Denied') / length(decisions)
+	error_rate <- sum((decisions == 'Approved' & actual == 'Denied') | (decisions == 'Denied' & actual == 'Approved')) / sum(decisions == 'Approved' | decisions == 'Denied')
+
+	print(table(actual, decisions))
+	cat('Automation Level: ', automation_level, '\n')
+	cat('Error Rate: ', error_rate, '\n')
+}
+```
+'model' is any logistic regression model using the data set, 'data' is a validation set (a subset of the data we're given), 'lower' is the lower bound of prediction (any loan with an acceptance probability below lower will be rejected), 'upper' is the upper bound of prediction
+
+```{r loan decider sample use}
+sub_train <- train %>% sample_frac(.7)
+sub_valid <- anti_join(train, sub_train, by='LoanNumber')
+
+model0 <- glm(LoanStatus == 'Approved' ~ IsBalanced, data = sub_train, family = binomial())
+LoanDecider_validation(model0, sub_valid)
+```
 
 ```{r monthly loan approval rate}
 monthly_data <- train %>%
