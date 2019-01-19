@@ -15,7 +15,7 @@ train_fp <- "C:/Users/Quinton/Incoming/UCF Dataset 2018 - Training set.csv"		#Th
 ```
 
 ```{r data import}
-train <- read_csv(train_fp)
+train <- read_csv(train_fp, col_types = cols(LoanNumber = "d", DownPayment = "d"))
 ```
 
 ```{r data cleaning}
@@ -28,12 +28,32 @@ train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/
   isNewVehicle = (isNewVehicle == 'Y'),
   MemberIndicator = (MemberIndicator == 'Y'),
   CoApplicantIndicator = (CoApplicantIndicator == 'Y'),
-  IsBalanced = (TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - TotalMonthlyDebtBeforeLoan - EstimatedMonthlyPayment > 0),
+  IsBalanced = (TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - EstimatedMonthlyPayment > 0),
   IsBalanced = replace(IsBalanced, is.na(IsBalanced), FALSE),
   NoCredit = (ModifiedCreditScore == 0),
   BadDTI = (DTI < 0.05 | DTI > 0.5 | is.na(DTI)))
 ```
 Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
+
+```{r data cleaning part 2}
+train_cropped <- train %>% mutate(DTI = replace(DTI, DTI > 2.5 | is.na(DTI), 2.5),
+                                  LTV = replace(LTV, LTV > 2.5 | is.na(LTV), 2.5),
+                                  Lender = Source == 'LENDER',
+                                  Consumer = Source == 'CONSUMER',
+                                  BadCredit = ModifiedCreditScore >= 400 & ModifiedCreditScore < 650,
+                                  Employed = EmploymentStatus == 'Employed',
+                                  Unemployed = EmploymentStatus == 'Unemployed',
+                                  Retired = EmploymentStatus == 'Retired',
+                                  TotalEmployedMonths = EmployedMonths + PrevEmployedMonths + CoEmployedMonths + CoPrevEmployedMonths,
+                                  Undecided = VehicleMake == 'UNDECIDED',
+                                  Homeowner = OccupancyStatus == 'OWN' | OccupancyStatus == 'BUYING') %>%
+  filter(Loanterm * EstimatedMonthlyPayment != AmountRequested)
+```
+
+```{r train valid split}
+sub_train <- train_cropped %>% sample_frac(.7)
+sub_valid <- anti_join(train_cropped, sub_train, by='LoanNumber')
+```
 
 ```{r loan decider}
 LoanDecider_validation <- function(model, data, lower = 0.1, upper = 0.9) {
@@ -44,14 +64,18 @@ LoanDecider_validation <- function(model, data, lower = 0.1, upper = 0.9) {
 	
 	decisions <- probabilities %>%
 		replace(list = (probabilities > upper), values = "Approved") %>%
-		replace(list = (probabilities < lower), values = "Denied") %>%
+		replace(list = (probabilities < lower), values = "Declined") %>%
 		replace(list = (probabilities >= lower & probabilities <= upper), values = "No Decision")
 	
-	automation_level <- sum(decisions == 'Approved' | decisions == 'Denied') / length(decisions)
-	error_rate <- sum((decisions == 'Approved' & actual == 'Denied') | (decisions == 'Denied' & actual == 'Approved')) / sum(decisions == 'Approved' | decisions == 'Denied')
+	automation_level <- sum(decisions == 'Approved' | decisions == 'Declined') / length(decisions)
+	precision_level <- sum(decisions == 'Approved' & actual == 'Approved') / sum(decisions == 'Approved')
+	sensitivity_level <- sum(decisions == 'Approved' & actual == 'Approved') / sum(actual == 'Approved')
+	error_rate <- sum((decisions == 'Approved' & actual == 'Declined') | (decisions == 'Declined' & actual == 'Approved')) / sum(decisions == 'Approved' | decisions == 'Declined')
 
 	print(table(actual, decisions))
 	cat('Automation Level: ', automation_level, '\n')
+	cat('Precision Level: ', precision_level, '\n')
+	cat('Sensitivity Level: ', sensitivity_level, '\n')
 	cat('Error Rate: ', error_rate, '\n')
 }
 ```
@@ -132,4 +156,11 @@ train_anomaliesByMonth <- train %>%
   mutate('AppReceiveMonth' = floor_date(AppReceiveDate, unit = 'month'), 'EstimatedNet' = TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - TotalMonthlyDebtBeforeLoan - EstimatedMonthlyPayment, 'DenialAnomaly' = (EstimatedNet > 0 & ModifiedCreditScore >= 650 & LoanStatus == 'Declined'), 'ApprovalAnomaly' = ((EstimatedNet <= 0 | ModifiedCreditScore < 650) & LoanStatus == 'Approved')) %>%
   group_by(AppReceiveMonth) %>%
   summarize('Anomalous Approval Rate' = mean(ApprovalAnomaly == TRUE), 'Anomalous Denial Rate' = mean(DenialAnomaly == TRUE))
+```
+
+```{r dti ltv}
+ggplot(train, aes(LTV, DTI, color = LoanStatus)) +
+  geom_point() +
+  xlim(0,2) +
+  ylim(0,3)
 ```
