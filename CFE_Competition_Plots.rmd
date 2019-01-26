@@ -1,0 +1,97 @@
+---
+title: "CFE_Competition_Plots"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(glmnet)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r config}
+train_fp <- "C:/Users/Quinton/Incoming/UCF Dataset 2018 - Training set.csv"		#The filepath of the training data
+```
+
+```{r data import}
+train <- read_csv(train_fp, col_types = cols(LoanNumber = "d", DownPayment = "d"))
+```
+
+```{r data cleaning}
+train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/%Y'),
+  LTV = as.numeric(LTV),
+  CoMonthlyLiability = replace(as.numeric(CoMonthlyLiability), is.na(as.numeric(CoMonthlyLiability)), 0),
+  CoMonthlyRent = replace(as.numeric(CoMonthlyRent), is.na(as.numeric(CoMonthlyRent)), 0),
+  DownPayment = replace(DownPayment, is.na(DownPayment), 0),
+  OccupancyStatus = replace(OccupancyStatus, is.na(OccupancyStatus), 'OTHER'),
+  isNewVehicle = (isNewVehicle == 'Y'),
+  MemberIndicator = (MemberIndicator == 'Y'),
+  CoApplicantIndicator = (CoApplicantIndicator == 'Y'),
+  IsBalanced = (TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - EstimatedMonthlyPayment > 0),
+  IsBalanced = replace(IsBalanced, is.na(IsBalanced), FALSE),
+  NoCredit = (ModifiedCreditScore == 0),
+  BadDTI = (DTI < 0.05 | DTI > 0.5 | is.na(DTI)))
+
+train_cropped <- train %>% mutate(DTI = replace(DTI, DTI > 2.5 | is.na(DTI), 2.5),
+                                  LTV = replace(LTV, LTV > 2.5, 2.5),
+                                  LTV = replace(LTV, is.na(LTV), 1),
+                                  Lender = Source == 'LENDER',
+                                  Consumer = Source == 'CONSUMER',
+                                  Employed = EmploymentStatus == 'Employed',
+                                  Unemployed = EmploymentStatus == 'Unemployed',
+                                  Retired = EmploymentStatus == 'Retired',
+                                  TotalEmployedMonths = EmployedMonths + PrevEmployedMonths + CoEmployedMonths + CoPrevEmployedMonths,
+                                  Undecided = VehicleMake == 'UNDECIDED',
+                                  Homeowner = OccupancyStatus == 'OWN' | OccupancyStatus == 'BUYING',
+                                  EstimatedProfit = (EstimatedMonthlyPayment * Loanterm) - AmountRequested) %>%
+  filter(!is.na(EstimatedProfit))
+```
+
+```{r EstimatedProfit plot}
+ggplot(train_cropped, aes(x = EstimatedProfit, y= AppReceiveDate, color = LoanStatus)) +
+  geom_point() +
+  xlim(-10, 10)
+```
+
+```{r Value by Mileage plot}
+ggplot(train_cropped, aes(x = TotalVehicleValue, y = VehicleMileage, color = LoanStatus)) +
+  geom_point() +
+  xlim(0, 100000) +
+  ylim(0, 200000)
+```
+
+```{r DTI by approval rate}
+
+DTI_data <- train_cropped %>%
+  mutate(DTI = round(DTI, 2)) %>%
+  group_by(DTI) %>%
+  summarize('ApprovalRate' = mean(LoanStatus == 'Approved'))
+
+ggplot(DTI_data, aes(x = DTI, y = ApprovalRate)) +
+  geom_line()
+
+```
+
+```{r ModifiedCreditScore by approval rate}
+
+MCS_data <- train_cropped %>%
+  group_by(ModifiedCreditScore) %>%
+  summarize('ApprovalRate' = mean(LoanStatus == 'Approved'))
+
+ggplot(MCS_data, aes(x = ModifiedCreditScore, y = ApprovalRate)) +
+  geom_line() +
+  xlim(400, 850)
+
+```
+
+```{r AppReceiveDate by approval rate}
+monthly_data <- train_cropped %>%
+	mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month')) %>%
+	group_by(AppReceiveMonth) %>%
+	summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
+
+ggplot(monthly_data, mapping = aes(AppReceiveMonth, ApprovalRate)) +
+	geom_line() +
+	coord_cartesian(ylim = c(0,1), expand = FALSE)
+```

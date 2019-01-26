@@ -8,6 +8,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(lubridate)
+library(glmnet)
 ```
 
 ```{r config}
@@ -37,35 +38,97 @@ Note: Many of the numeric variables will not be parsed as numeric due to the way
 
 ```{r data cleaning part 2}
 train_cropped <- train %>% mutate(DTI = replace(DTI, DTI > 2.5 | is.na(DTI), 2.5),
-                                  LTV = replace(LTV, LTV > 2.5 | is.na(LTV), 2.5),
+                                  LTV = replace(LTV, LTV > 2.5, 2.5),
+                                  LTV = replace(LTV, is.na(LTV), 1),
                                   Lender = Source == 'LENDER',
                                   Consumer = Source == 'CONSUMER',
-                                  BadCredit = ModifiedCreditScore >= 400 & ModifiedCreditScore < 650,
                                   Employed = EmploymentStatus == 'Employed',
                                   Unemployed = EmploymentStatus == 'Unemployed',
                                   Retired = EmploymentStatus == 'Retired',
                                   TotalEmployedMonths = EmployedMonths + PrevEmployedMonths + CoEmployedMonths + CoPrevEmployedMonths,
                                   Undecided = VehicleMake == 'UNDECIDED',
-                                  Homeowner = OccupancyStatus == 'OWN' | OccupancyStatus == 'BUYING') %>%
-  filter(Loanterm * EstimatedMonthlyPayment != AmountRequested)
+                                  Homeowner = OccupancyStatus == 'OWN' | OccupancyStatus == 'BUYING',
+                                  EstimatedProfit = (EstimatedMonthlyPayment * Loanterm) - AmountRequested,
+                                  EstimatedProfit_trans = log(1 +replace(EstimatedProfit, EstimatedProfit < 0, 0))) %>%
+  filter(!is.na(EstimatedProfit))
+```
+
+```{r data cleaning for regularization}
+train_numeric <- train %>%
+  filter(!(EstimatedMonthlyPayment * Loanterm - AmountRequested >= 0 & EstimatedMonthlyPayment * Loanterm - AmountRequested < 1)) %>%
+  mutate(DTI = replace(DTI, DTI > 2.5, 2.5),
+         LTV = replace(LTV, LTV > 2.5, 2.5),
+         LTV = replace(LTV, is.na(LTV), 1),
+         ModifiedCreditScore_sq = ModifiedCreditScore ** 2,
+         ModifiedCreditScore_cu = ModifiedCreditScore ** 3,
+         Credit_F = ModifiedCreditScore == 0,
+         Credit_D = ModifiedCreditScore >= 400 & ModifiedCreditScore < 630,
+         Credit_C = ModifiedCreditScore >= 630 & ModifiedCreditScore < 670,
+         Credit_B = ModifiedCreditScore >= 670 & ModifiedCreditScore < 740,
+         Credit_A = ModifiedCreditScore >= 740,
+         DTI_sq = DTI**2,
+         DTI_cu = DTI**3,
+         LTV_sq = LTV**2,
+         LTV_cu = LTV**3,
+         AppReceiveDate = as.numeric(AppReceiveDate) - min(as.numeric(AppReceiveDate)),
+         AppReceiveDate_sq = (as.numeric(AppReceiveDate) - min(as.numeric(AppReceiveDate))) ** 2,
+         AppReceiveDate_cu = (as.numeric(AppReceiveDate) - min(as.numeric(AppReceiveDate))) ** 3,
+         EmployedMonths_log = log(1 + EmployedMonths),
+         VehicleMileage_log = log(1 + VehicleMileage),
+         TotalVehicleValue_log = log(1 + TotalVehicleValue),
+         Lender = as.numeric(Source == 'LENDER'),
+         Consumer = as.numeric(Source == 'CONSUMER'),
+         Employed = as.numeric(EmploymentStatus == 'Employed'),
+         Unemployed = as.numeric(EmploymentStatus == 'Unemployed'),
+         Retired = as.numeric(EmploymentStatus == 'Retired'),
+         Undecided = as.numeric(VehicleMake == 'UNDECIDED'),
+         isNewVehicle = as.numeric(isNewVehicle),
+         Homeowner = as.numeric(OccupancyStatus == 'OWN' | OccupancyStatus == 'BUYING'),
+         MemberIndicator = as.numeric(MemberIndicator),
+         CoApplicantIndicator = as.numeric(CoApplicantIndicator),
+         UndecidedLender = Lender * Undecided,
+         UndecidedConsumer = Consumer * Undecided,
+         EmployedEmployedMonths_log = Employed * log(1 + EmployedMonths),
+         UnemployedEmployedMonths_log = Unemployed * log(1 + EmployedMonths),
+         RetiredEmployedMonths_log = Retired * log(1 + EmployedMonths),
+         HomeownerOccupancyDuration = Homeowner * OccupancyDuration,
+         NewUndecidedVehicle = isNewVehicle * Undecided,
+         VehicleMileageValue_log = VehicleMileage * log(1 + TotalVehicleValue),
+         EstimatedTotalProfit = AmountRequested - EstimatedMonthlyPayment * Loanterm,
+         EstimatedTotalProfit_sq = (AmountRequested - EstimatedMonthlyPayment * Loanterm)**2,
+         EstimatedTotalProfit_cu = (AmountRequested - EstimatedMonthlyPayment * Loanterm)**3,
+         LoanNumber = NULL,
+         Source = NULL,
+         EmploymentStatus = NULL,
+         VehicleMake = NULL,
+         OccupancyStatus = NULL,
+         RequestType = NULL,
+         IsBalanced = NULL,
+         BadDTI = NULL) %>% filter(!is.na(Loanterm), !is.na(DTI))
+train_elastic_x <- scale(as.matrix(train_numeric %>% select(-'LoanStatus')))
+train_elastic_y <- as.factor(train_numeric$LoanStatus)
 ```
 
 ```{r train valid split}
-sub_train <- train_cropped %>% sample_frac(.7)
+sub_train <- train_cropped %>% sample_frac(.8)
 sub_valid <- anti_join(train_cropped, sub_train, by='LoanNumber')
 ```
 
 ```{r loan decider}
-LoanDecider_validation <- function(model, data, lower = 0.1, upper = 0.9) {
+LoanDecider_validation <- function(model, data, lower = 0.1, upper = 0.9, estimatedProfitRejection = FALSE) {
 
 	actual <- data$LoanStatus
-
 	probabilities <- 1/(1 + exp(-predict(model, newdata = data)))
+
 	
 	decisions <- probabilities %>%
 		replace(list = (probabilities > upper), values = "Approved") %>%
 		replace(list = (probabilities < lower), values = "Declined") %>%
 		replace(list = (probabilities >= lower & probabilities <= upper), values = "No Decision")
+	
+		if (estimatedProfitRejection == TRUE){
+	  decisions <- replace(decisions, data$EstimatedProfit >= 0 & data$EstimatedProfit <= 1, 'Declined')
+	}
 	
 	automation_level <- sum(decisions == 'Approved' | decisions == 'Declined') / length(decisions)
 	precision_level <- sum(decisions == 'Approved' & actual == 'Approved') / sum(decisions == 'Approved')
@@ -90,7 +153,7 @@ LoanDecider_validation(model0, sub_valid)
 ```
 
 ```{r monthly loan approval rate}
-monthly_data <- train %>%
+monthly_data <- train_cropped %>%
 	mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month')) %>%
 	group_by(AppReceiveMonth) %>%
 	summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
