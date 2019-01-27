@@ -330,3 +330,85 @@ qplot(x= TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - Prime
       xlab="Estimated Net Income", 
       ylab= "Debt to Income Ratio", 
       main="Estimated Net Income vs. DTI")
+
+
+###################################################################
+
+# Justin Requested Plots
+
+#DTI check
+#LTV check
+#ModifiedCreditScore: be sure the quartiles are correct (it seems like some of the data is missing because the quartiles don't overlap): See attached spreadsheet Credit Score Tab
+#ModifiedBankRuptcy score
+#OpenRevolving Accounts check
+#Scatter plot for: Open Revolving Accounts vs. Credit Score with Approved / Declined (feel free to exclude certain high-outliers)
+
+# DTI
+
+summary(train$DTI)
+ggplot(train, aes(x=LoanStatus, y=DTI, 
+                  fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+#1st Approval after outliers is at 1.77345
+# Max of 4375 
+# Na's of 198
+
+# 42.8 - >> 208.33...
+
+ggplot(train[which(train$DTI < 2),], aes(x=LoanStatus, y=DTI, 
+                 fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip() 
+
+
+# LTV
+
+summary(train$LTV)
+ggplot(train, aes(x=LoanStatus, y=LTV, 
+                  fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+# 1st approval after outliers is at 2.8301
+# Max of 30102
+# Na's 10822
+
+# 89.2655 - >> 114.3424
+
+ggplot(train[which(train$LTV < 2.9),], aes(x=LoanStatus, y=LTV,
+                fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip() 
+
+
+
+
+# Number of Open Revolving Accounts
+ggplot(train, aes(x=LoanStatus, y=NumberOfOpenRevolvingAccounts, 
+        fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+# open revolving account
+summary(train$NumberOfOpenRevolvingAccounts)
+ggplot(train, aes(x=LoanStatus, y=train$NumberOfOpenRevolvingAccounts, 
+                  fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+# Open Revolving Acounts vs Credit Score
+
+qplot(x= NumberOfOpenRevolvingAccounts, 
+      y= train$ModifiedCreditScore, 
+      data= train, color=LoanStatus, 
+      xlim=  , ylim=  , 
+      xlab="Number of Open Revolving Accounts", 
+      ylab= "Modified Credit Score", 
+      main="Number if Open Revolving Accounts vs. Modified Credit Scores")
+
+
+
+# removed zeros----
+# R doc for geom_boxplot
+# R doc for boxplots.stats
+# R doc for quantile
+
+CREDIT = ggplot(train[which(train$ModifiedCreditScore > 0),], aes(x=LoanStatus, y=ModifiedCreditScore, 
+                fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+ggplot_build(CREDIT)$data
+
+BANKRUPTCY = ggplot(train[which(train$ModifiedBankruptcyScore > 0),], aes(x=LoanStatus, y=ModifiedBankruptcyScore, 
+                fill = LoanStatus)) + geom_boxplot() + guides(fill=FALSE) + coord_flip()
+
+ggplot_build(BANKRUPTCY)$data
