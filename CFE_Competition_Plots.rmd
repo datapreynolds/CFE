@@ -95,3 +95,35 @@ ggplot(monthly_data, mapping = aes(AppReceiveMonth, ApprovalRate)) +
 	geom_line() +
 	coord_cartesian(ylim = c(0,1), expand = FALSE)
 ```
+
+```{r EmployedMonths by approval rate and employment status}
+employment_data <- train_cropped %>%
+  group_by(EmployedMonths, EmploymentStatus) %>%
+  summarize(ApprovalRate = mean(LoanStatus == 'Approved'), Count = n())
+
+ggplot(employment_data, aes(x = EmployedMonths, y = ApprovalRate, color = EmploymentStatus, size = Count)) +
+  geom_point() +
+  xlim(0, 600)
+```
+
+```{r TotalMonthlyIncome by approval rate}
+income_data <- train_cropped %>%
+  mutate(TotalMonthlyIncome = round(TotalMonthlyIncome, -1)) %>%
+  group_by(TotalMonthlyIncome) %>%
+  summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
+
+ggplot(income_data, aes(x = TotalMonthlyIncome, y = ApprovalRate)) +
+  geom_line() +
+  xlim(0, 3000)
+```
+
+```{r TotalMonthlyDebtBeforeLoan by approval rate}
+debt_data <- train_cropped %>%
+  mutate(TotalMonthlyDebtBeforeLoan = round(TotalMonthlyDebtBeforeLoan, -1)) %>%
+  group_by(TotalMonthlyDebtBeforeLoan) %>%
+  summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
+
+ggplot(debt_data, aes(x = TotalMonthlyDebtBeforeLoan, y = ApprovalRate)) +
+  geom_line() +
+  xlim(0, 1000)
+```
