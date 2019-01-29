@@ -1,0 +1,172 @@
+---
+title: "CFE Lending Analytics Competition"
+subtitle: "Final Model"
+author: "Team 10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r data import}
+train_fp <- "~/UCF Dataset 2018 - Training set.csv"		#The filepath of the training data
+test_fp <- "~/UCF Dataset 2018 - Testing set.csv"		#The filepath of the test data
+
+train <- read_csv(train_fp, col_types = cols(LoanNumber = "d", DownPayment = "d", LTV = "d"))
+test <- read_csv(test_fp, col_types = cols(LoanNumber = "d", DownPayment = "d", LTV = "d"))
+```
+
+```{r train data cleaning}
+train_clean <- train %>%
+  filter(EmployedMonths < 1200,
+         TotalMonthlyIncome >= 1000,
+         TotalVehicleValue < 1000000,
+         AmountRequested < 200000,
+         (Loanterm*EstimatedMonthlyPayment) - AmountRequested >= 1 | (Loanterm*EstimatedMonthlyPayment) - AmountRequested < 0) %>%
+  mutate(AppReceiveDate = as.numeric(as.Date(AppReceiveDate, format = '%m/%d/%Y')) - 16436,
+         LTV = replace(LTV, LTV > 2.5, 2.5),
+         LTV = replace(LTV, is.na(LTV), 1),
+         DTI = replace(DTI, DTI > 0.5 | is.na(DTI), 0.5),
+         OccupancyStatus = replace(OccupancyStatus, is.na(OccupancyStatus), 'OTHER')) %>%
+  transmute(LoanNumber = LoanNumber,
+            AppReceiveDate_cu = AppReceiveDate ** 3,
+            AppReceiveDate_sq = AppReceiveDate ** 2,
+            AppReceiveDate = AppReceiveDate,
+            isCredit_F = ModifiedCreditScore == 0,
+            isCredit_D = ModifiedCreditScore >= 400 & ModifiedCreditScore < 630,
+            isCredit_C = ModifiedCreditScore >= 630 & ModifiedCreditScore < 670,
+            isCredit_B = ModifiedCreditScore >= 670 & ModifiedCreditScore < 740,
+            ModifiedCreditScore_cu = ModifiedCreditScore ** 3,
+            ModifiedCreditScore_sq = ModifiedCreditScore ** 2,
+            ModifiedCreditScore = ModifiedCreditScore,
+            BankruptcyCredit = ModifiedCreditScore * ModifiedBankruptcyScore,
+            ModifiedBankruptcyScore_sq = ModifiedBankruptcyScore **2,
+            ModifiedBankruptcyScore = ModifiedBankruptcyScore,
+            CurrentEmployedMonths_ln = log(1 + EmployedMonths)*as.numeric(EmploymentStatus == 'Employed'),
+            TotalMonthlyIncome_ln = log(1 + TotalMonthlyIncome),
+            isLowDebt = TotalMonthlyDebtBeforeLoan < 300,
+            isUndecided = VehicleMake == 'UNDECIDED',
+            isHighMileage = VehicleMileage >= 100000,
+            isNewVehicle = isNewVehicle == 'Y',
+            TotalVehicleValue_ln = log(1 + TotalVehicleValue),
+            AmountRequested = AmountRequested,
+            isHomeowner = OccupancyStatus == "OWN" | OccupancyStatus == 'BUYING',
+            LTV_sq = LTV ** 2,
+            LTV = LTV,
+            DTI_cu = DTI ** 3,
+            DTI_sq = DTI ** 2,
+            DTI = DTI,
+            MemberIndicator = MemberIndicator == 'Y',
+            CoApplicantIndicator = CoApplicantIndicator == 'Y',
+            EstimatedProfit = (Loanterm*EstimatedMonthlyPayment) - AmountRequested,
+            Approved = LoanStatus == 'Approved')
+```
+            
+  
+```{r logistic model fitting}
+fit <- glm(Approved ~  AppReceiveDate_cu + AppReceiveDate_sq + AppReceiveDate + isCredit_F + isCredit_D + isCredit_C + isCredit_B + ModifiedCreditScore_cu + ModifiedCreditScore_sq + ModifiedCreditScore + BankruptcyCredit + ModifiedBankruptcyScore_sq + ModifiedBankruptcyScore + CurrentEmployedMonths_ln + TotalMonthlyIncome_ln + isLowDebt + isUndecided + isHighMileage + isNewVehicle + TotalVehicleValue_ln + AmountRequested + isHomeowner +LTV_sq + LTV + DTI_cu + DTI_sq + DTI +  MemberIndicator + CoApplicantIndicator, data = train_clean, family = binomial())
+```
+
+```{r test data cleaning}
+test_clean <- test %>% 
+    mutate(AppReceiveDate = as.numeric(as.Date(AppReceiveDate, format = '%m/%d/%Y')) - 16436,
+         LTV = replace(LTV, LTV > 2.5, 2.5),
+         LTV = replace(LTV, is.na(LTV), 1),
+         DTI = replace(DTI, DTI > 0.5 | is.na(DTI), 0.5)) %>%
+  transmute(LoanNumber = LoanNumber,
+            AppReceiveDate_cu = AppReceiveDate ** 3,
+            AppReceiveDate_sq = AppReceiveDate ** 2,
+            AppReceiveDate = AppReceiveDate,
+            isCredit_F = ModifiedCreditScore == 0,
+            isCredit_D = ModifiedCreditScore >= 400 & ModifiedCreditScore < 630,
+            isCredit_C = ModifiedCreditScore >= 630 & ModifiedCreditScore < 670,
+            isCredit_B = ModifiedCreditScore >= 670 & ModifiedCreditScore < 740,
+            ModifiedCreditScore_cu = ModifiedCreditScore ** 3,
+            ModifiedCreditScore_sq = ModifiedCreditScore ** 2,
+            ModifiedCreditScore = ModifiedCreditScore,
+            BankruptcyCredit = ModifiedCreditScore * ModifiedBankruptcyScore,
+            ModifiedBankruptcyScore_sq = ModifiedBankruptcyScore **2,
+            ModifiedBankruptcyScore = ModifiedBankruptcyScore,
+            CurrentEmployedMonths_ln = log(1 + EmployedMonths)*as.numeric(EmploymentStatus == 'Employed'),
+            TotalMonthlyIncome_ln = log(1 + TotalMonthlyIncome),
+            isLowDebt = TotalMonthlyDebtBeforeLoan < 300,
+            isUndecided = VehicleMake == 'UNDECIDED',
+            isHighMileage = VehicleMileage >= 100000,
+            isNewVehicle = isNewVehicle == 'Y',
+            TotalVehicleValue_ln = log(1 + TotalVehicleValue),
+            AmountRequested = AmountRequested,
+            isHomeowner = OccupancyStatus == "OWN" | OccupancyStatus == 'BUYING',
+            LTV_sq = LTV ** 2,
+            LTV = LTV,
+            DTI_cu = DTI ** 3,
+            DTI_sq = DTI ** 2,
+            DTI = DTI,
+            MemberIndicator = MemberIndicator == 'Y',
+            CoApplicantIndicator = CoApplicantIndicator == 'Y',
+            EstimatedProfit = (Loanterm*EstimatedMonthlyPayment) - AmountRequested,
+            Approved = NA)
+```
+
+```{r loan decider definition}
+LoanDecider <- function(model, df, override = TRUE, lower.bound = 0.5, upper.bound = 0.5){
+  
+  df_clean <- df %>% 
+    mutate(AppReceiveDate = as.numeric(as.Date(AppReceiveDate, format = '%m/%d/%Y')) - 16436,
+         LTV = replace(LTV, LTV > 2.5, 2.5),
+         LTV = replace(LTV, is.na(LTV), 1),
+         DTI = replace(DTI, DTI > 0.5 | is.na(DTI), 0.5),
+         OccupancyStatus = replace(OccupancyStatus, is.na(OccupancyStatus), 'OTHER')) %>%
+  transmute(LoanNumber = LoanNumber,
+            AppReceiveDate_cu = AppReceiveDate ** 3,
+            AppReceiveDate_sq = AppReceiveDate ** 2,
+            AppReceiveDate = AppReceiveDate,
+            isCredit_F = ModifiedCreditScore == 0,
+            isCredit_D = ModifiedCreditScore >= 400 & ModifiedCreditScore < 630,
+            isCredit_C = ModifiedCreditScore >= 630 & ModifiedCreditScore < 670,
+            isCredit_B = ModifiedCreditScore >= 670 & ModifiedCreditScore < 740,
+            ModifiedCreditScore_cu = ModifiedCreditScore ** 3,
+            ModifiedCreditScore_sq = ModifiedCreditScore ** 2,
+            ModifiedCreditScore = ModifiedCreditScore,
+            BankruptcyCredit = ModifiedCreditScore * ModifiedBankruptcyScore,
+            ModifiedBankruptcyScore_sq = ModifiedBankruptcyScore **2,
+            ModifiedBankruptcyScore = ModifiedBankruptcyScore,
+            CurrentEmployedMonths_ln = log(1 + EmployedMonths)*as.numeric(EmploymentStatus == 'Employed'),
+            TotalMonthlyIncome_ln = log(1 + TotalMonthlyIncome),
+            isLowDebt = TotalMonthlyDebtBeforeLoan < 300,
+            isUndecided = VehicleMake == 'UNDECIDED',
+            isHighMileage = VehicleMileage >= 100000,
+            isNewVehicle = isNewVehicle == 'Y',
+            TotalVehicleValue_ln = log(1 + TotalVehicleValue),
+            AmountRequested = AmountRequested,
+            isHomeowner = OccupancyStatus == "OWN" | OccupancyStatus == 'BUYING',
+            LTV_sq = LTV ** 2,
+            LTV = LTV,
+            DTI_cu = DTI ** 3,
+            DTI_sq = DTI ** 2,
+            DTI = DTI,
+            MemberIndicator = MemberIndicator == 'Y',
+            CoApplicantIndicator = CoApplicantIndicator == 'Y',
+            EstimatedProfit = (Loanterm*EstimatedMonthlyPayment) - AmountRequested,
+            Approved = NA)
+  
+  probabilities <- 1/(1 + exp(-predict(object = model, newdata = df_clean)))
+  decisions <- probabilities %>%
+		replace(list = (probabilities > upper.bound), values = "Approved") %>%
+		replace(list = (probabilities < lower.bound), values = "Declined") %>%
+		replace(list = (probabilities >= lower.bound & probabilities <= upper.bound), values = "No Decision")
+  
+  if (override){
+	  decisions <- replace(decisions, df_clean$EstimatedProfit >= 0 & df_clean$EstimatedProfit <= 1, 'Declined')
+	  decisions <- replace(decisions, df$TotalMonthlyIncome < 1000, 'Declined')
+  }
+  
+  output <- tibble(LoanNumber = df$LoanNumber, Prediction = decisions)
+  return(output)
+}
+```
+
+```{r loan decider execution}
+LoanDecider(model = fit, df = test)
+```
