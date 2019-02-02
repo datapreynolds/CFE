@@ -28,6 +28,7 @@ train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/
                       MemberIndicator = (MemberIndicator == 'Y'),
                       CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
 maker<- train$VehicleMake
+maker<- gsub("HARELY", "HARLEY-DAVIDSON", maker)
 maker<- gsub("truc", "TRUCK", maker)
 
 ```
