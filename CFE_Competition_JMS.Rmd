@@ -28,7 +28,7 @@ train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/
                       MemberIndicator = (MemberIndicator == 'Y'),
                       CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
 maker<- train$VehicleMake
-
+maker<- gsub("truc", "TRUCK", maker)
 
 ```
 Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
@@ -51,3 +51,9 @@ undecicded_data <- train %>%
 ggplot(undecicded_data, aes(AppReceiveDate, VehicleYear, color = isNewVehicle)) +
   geom_point()
 ```
+
+```{r DTI vs LTV}
+
+
+```
+
