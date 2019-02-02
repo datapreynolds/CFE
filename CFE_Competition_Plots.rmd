@@ -76,6 +76,7 @@ ggplot(DTI_data, aes(x = DTI, y = ApprovalRate)) +
 ```{r ModifiedCreditScore by approval rate}
 
 MCS_data <- train_cropped %>%
+  mutate(ModifiedCreditScore = ModifiedCreditScore - (ModifiedCreditScore %% 2)) %>%
   group_by(ModifiedCreditScore) %>%
   summarize('ApprovalRate' = mean(LoanStatus == 'Approved'))
 
@@ -126,4 +127,20 @@ debt_data <- train_cropped %>%
 ggplot(debt_data, aes(x = TotalMonthlyDebtBeforeLoan, y = ApprovalRate)) +
   geom_line() +
   xlim(0, 1000)
+```
+
+```{r accounts vs approval}
+accounts_data <- train %>%
+  group_by(NumberOfOpenRevolvingAccounts) %>%
+  summarize(ApprovalRate = mean(LoanStatus == 'Approved'), Count = n(), AvgCreditScore = mean(ModifiedCreditScore))
+
+ggplot(accounts_data, aes(NumberOfOpenRevolvingAccounts, ApprovalRate, size = Count)) + geom_point()
+```
+
+```{r accounts vs credit score}
+accounts_data <- train %>%
+  group_by(NumberOfOpenRevolvingAccounts) %>%
+  summarize(ApprovalRate = mean(LoanStatus == 'Approved'), Count = n(), AvgCreditScore = mean(ModifiedCreditScore))
+
+ggplot(accounts_data, aes(NumberOfOpenRevolvingAccounts, AvgCreditScore, size = Count)) + geom_point()
 ```
