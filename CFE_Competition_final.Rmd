@@ -33,7 +33,7 @@ train <- read_csv(train_fp, col_types = cols(LoanNumber = "d",
                                            CoMonthlyLiability = "d",
                                            PrimeMonthlyRent = "d",
                                            CoMonthlyRent = "d",
-                                           TotalMonthlyRentBeforeLoan = "d",
+                                           TotalMonthlyDebtBeforeLoan = "d",
                                            VehicleYear = "i",
                                            VehicleMake = "c",
                                            VehicleMileage = "n",
@@ -45,14 +45,13 @@ train <- read_csv(train_fp, col_types = cols(LoanNumber = "d",
                                            OccupancyStatus = "c",
                                            OccupancyDuration = "i",
                                            EstimatedMonthlyPayment = "d",
-                                           NumberofOpenRevolvingAccounts = "i",
+                                           NumberOfOpenRevolvingAccounts = "i",
                                            LTV = "d",
                                            RequestType = "c",
                                            DTI = "d",
                                            MemberIndicator = "c",
                                            CoApplicantIndicator = "c"))
 test <- read_csv(test_fp, col_types = cols(LoanNumber = "d",
-                                           LoanStatus = "c",
                                            Source = "c",
                                            AppReceiveDate = "c",
                                            ModifiedCreditScore = "i",
@@ -69,7 +68,7 @@ test <- read_csv(test_fp, col_types = cols(LoanNumber = "d",
                                            CoMonthlyLiability = "d",
                                            PrimeMonthlyRent = "d",
                                            CoMonthlyRent = "d",
-                                           TotalMonthlyRentBeforeLoan = "d",
+                                           TotalMonthlyDebtBeforeLoan = "d",
                                            VehicleYear = "i",
                                            VehicleMake = "c",
                                            VehicleMileage = "n",
@@ -81,7 +80,7 @@ test <- read_csv(test_fp, col_types = cols(LoanNumber = "d",
                                            OccupancyStatus = "c",
                                            OccupancyDuration = "i",
                                            EstimatedMonthlyPayment = "d",
-                                           NumberofOpenRevolvingAccounts = "i",
+                                           NumberOfOpenRevolvingAccounts = "i",
                                            LTV = "d",
                                            RequestType = "c",
                                            DTI = "d",
@@ -89,12 +88,26 @@ test <- read_csv(test_fp, col_types = cols(LoanNumber = "d",
                                            CoApplicantIndicator = "c"))
 ```
 
-```{r train data cleaning definition}
+```{r data cleaning function definition}
 cleanAutoLoanData <- function(df, df.train = FALSE){
-  
+  #Takes in a testing or training data frame with the same columns as the contest testing or training
+  #files, returns a cleaned version of that data frame.
+  #
+  #PARAMETERS:
+  #df: The data frame. Must be either a tibble or something that can be converted to a tibble.
+  #df.train: If TRUE, indicates that the data frame is a train set, and makes the function remove some
+  #         observations from the data set.
+  #
+  #RETURNS:
+  #The cleaned version of df, as a tibble
+
   df_clean <- as.tibble(df)
   
-  if(df.train){
+  if(!('LoanStatus' %in% colnames(df))){ #Adds a LoanStatus column if there isn't one, this avoids problems
+    df_clean <- df_clean %>% mutate('LoanStatus' = NA)
+  }
+  
+  if(df.train){    #Outliers and troublesome loans are removed from training.
   df_clean <- df_clean %>%
   filter(EmployedMonths < 1200,
          TotalMonthlyIncome >= 1000,
@@ -103,7 +116,7 @@ cleanAutoLoanData <- function(df, df.train = FALSE){
          (Loanterm*EstimatedMonthlyPayment) - AmountRequested >= 1 | (Loanterm*EstimatedMonthlyPayment) - AmountRequested < 0)
   }
   
-  df_clean <- df_clean %>%
+  df_clean <- df_clean %>% 
     mutate(AppReceiveDate = as.numeric(as.Date(AppReceiveDate, format = '%m/%d/%Y') - 16436),
            LTV = replace(LTV, LTV > 2.5, 2.5),
            LTV = replace(LTV, is.na(LTV), 1),
@@ -146,35 +159,77 @@ cleanAutoLoanData <- function(df, df.train = FALSE){
 }
 ```
 
-```{r validation}
-LoanDecider_val <- function(model, df, override = TRUE, lower.bound = 0.5, upper.bound = 0.5){
+```{r loan decider function definition (for validation)}
+LoanDecider <- function(model, df, validation = FALSE, override = TRUE, lower.bound = 0.5, upper.bound = 0.5){
+  #Takes in a logistic model and a test set, outputs a table of results.
+  #
+  #PARAMETERS:
+  #model: The logistic model, as a glm object with family = "binomial".
+  #df: The data set, as a tibble
+  #
+  #override: If TRUE, the function will apply arbitrary decisions to certain subsets of the data, overriding the
+  #          logistic model's predictions.
+  #lower.bound: Any loan with an approval probability in [0, lower.bound), will be denied, unless overridden.
+  #upper.bound: Any loan with an approval probability in [upper.bound, 1] will be approved, unless overridden.
+  #             lower.bound must be less than or equal to upper.bound, both must be with [0,1]
+  #
+  #             If lower.bound < upper.bound, there will be no decisions made on loans in [lower.bound, upper.bound)
+  #             without an override.
+  #
+  #RETURNS:
+  #A tibble with the same number of rows as df, and two or three columns. LoanNumber is copied from df, Prediction is
+  #the result of the composite model, and Actual, if the validation parameter is set to TRUE, is the same as the
+  #LoanStatus column from df.
+  
+  if (lower.bound > upper.bound){
+    stop("lower bound greater than upper bound")
+  }
+  
+  if (lower.bound > 1 | lower.bound < 0){
+    stop("lower.bound must be a probability - acceptable values are 0 through 1, inclusive")
+  }
+  
+  if (upper.bound > 1 | upper.bound < 0){
+    stop("upper.bound must be a probability - acceptable values are 0 through 1, inclusive")
+  }
   
   df_clean <- cleanAutoLoanData(df, FALSE)
   
   probabilities <- 1/(1 + exp(-predict(object = model, newdata = df_clean)))
   decisions <- probabilities %>%
-		replace(list = (probabilities > upper.bound), values = "Approved") %>%
+		replace(list = (probabilities >= upper.bound), values = "Approved") %>%
 		replace(list = (probabilities < lower.bound), values = "Declined") %>%
-		replace(list = (probabilities >= lower.bound & probabilities <= upper.bound), values = "No Decision")
+		replace(list = (probabilities >= lower.bound & probabilities < upper.bound), values = "No Decision")
   
   if (override){
+    #There are currently two overrides. They will decline a loan if the 'EstimatedProfit' is between 0 and 1, or
+    #if the TotalMonthlyIncome is less than 1000. These overrides are explained further in the report.
 	  decisions <- replace(decisions, df_clean$EstimatedProfit >= 0 & df_clean$EstimatedProfit <= 1, 'Declined')
-	  decisions <- replace(decisions, df$TotalMonthlyIncome < 100, 'Declined')
+	  decisions <- replace(decisions, df$TotalMonthlyIncome < 1000, 'Declined')
   }
   
-  output <- tibble(LoanNumber = df$LoanNumber, Prediction = decisions, Actual = df$LoanStatus)
+  if(validation){
+    output <- tibble(LoanNumber = df$LoanNumber, Prediction = decisions, Actual = df$LoanStatus)
+  }
+  else{
+    output <- tibble(LoanNumber = df$LoanNumber, Prediction = decisions)
+  }
   return(output)
 }
+```
 
-showValidationStats <- function(validation) {
-  automation <- mean(validation$Prediction == 'Approved' | validation$Prediction == 'Declined')
-  accuracy <- mean(validation$Prediction == validation$Actual)
-  a_precision <- sum(validation$Prediction == validation$Actual & validation$Prediction == 'Approved') / sum(validation$Prediction == 'Approved')
-  a_sensitivity <- sum(validation$Prediction == validation$Actual & validation$Prediction == 'Approved') / sum(validation$Actual == 'Approved')
-  d_precision <- sum(validation$Prediction == validation$Actual & validation$Prediction == 'Declined') / sum(validation$Prediction == 'Declined')
-  d_sensitivity <- sum(validation$Prediction == validation$Actual & validation$Prediction == 'Declined') / sum(validation$Actual == 'Declined')
+```{r validation statistic display function definition}
+showValidationStats <- function(df) {
+  #Takes in a validation result table, as generated by the LoanDecider function with the validation parameter
+  #set to TRUE, and displays several statistics based on that information.
+  automation <- mean(df$Prediction == 'Approved' | df$Prediction == 'Declined')
+  accuracy <- mean(df$Prediction == df$Actual)
+  a_precision <- sum(df$Prediction == df$Actual & df$Prediction == 'Approved') / sum(df$Prediction == 'Approved')
+  a_sensitivity <- sum(df$Prediction == df$Actual & df$Prediction == 'Approved') / sum(df$Actual == 'Approved')
+  d_precision <- sum(df$Prediction == df$Actual & df$Prediction == 'Declined') / sum(df$Prediction == 'Declined')
+  d_sensitivity <- sum(df$Prediction == df$Actual & df$Prediction == 'Declined') / sum(df$Actual == 'Declined')
 
-  print(table(Pred. = validation$Prediction, Actual = validation$Actual))
+  print(table(Pred. = df$Prediction, Actual = df$Actual))
   cat('Automation Level: ', automation, '\n')
   cat('Accuracy Level: ', accuracy, '\n')
   cat('Approval Precision Level: ', a_precision, '\n')
@@ -182,6 +237,9 @@ showValidationStats <- function(validation) {
   cat('Denial Precision Level: ', d_precision, '\n')
   cat('Denial Sensitivity Level: ', d_sensitivity, '\n')
 }
+```
+
+```{r validation}
 
 sub_train <- train %>% sample_frac(.8)
 sub_valid <- anti_join(train, sub_train, by='LoanNumber')
@@ -190,7 +248,7 @@ sub_train <- cleanAutoLoanData(sub_train, TRUE)
 
 fit_val <- glm(Approved ~  AppReceiveDate_cu + AppReceiveDate_sq + AppReceiveDate + isCredit_F + isCredit_D + isCredit_C + isCredit_B + ModifiedCreditScore_cu + ModifiedCreditScore_sq + ModifiedCreditScore + BankruptcyCredit + ModifiedBankruptcyScore_sq + ModifiedBankruptcyScore + CurrentEmployedMonths_ln + TotalMonthlyIncome_ln + isLowDebt + isUndecided + isHighMileage + isNewVehicle + TotalVehicleValue_ln + AmountRequested + isHomeowner +LTV_sq + LTV + DTI_cu + DTI_sq + DTI +  MemberIndicator + CoApplicantIndicator, data = sub_train, family = binomial())
 
-validation_results <- LoanDecider_val(fit_val, sub_valid)
+validation_results <- LoanDecider(fit_val, sub_valid, validation = TRUE)
 showValidationStats(validation_results)
 
 ```
@@ -199,64 +257,6 @@ showValidationStats(validation_results)
 train_clean <- cleanAutoLoanData(train, df.train = TRUE)
 
 fit <- glm(Approved ~  AppReceiveDate_cu + AppReceiveDate_sq + AppReceiveDate + isCredit_F + isCredit_D + isCredit_C + isCredit_B + ModifiedCreditScore_cu + ModifiedCreditScore_sq + ModifiedCreditScore + BankruptcyCredit + ModifiedBankruptcyScore_sq + ModifiedBankruptcyScore + CurrentEmployedMonths_ln + TotalMonthlyIncome_ln + isLowDebt + isUndecided + isHighMileage + isNewVehicle + TotalVehicleValue_ln + AmountRequested + isHomeowner +LTV_sq + LTV + DTI_cu + DTI_sq + DTI +  MemberIndicator + CoApplicantIndicator, data = train_clean, family = binomial())
-```
-
-```{r loan decider definition}
-LoanDecider <- function(model, df, override = TRUE, lower.bound = 0.5, upper.bound = 0.5){
-  
-  df_clean <- df %>% 
-    mutate(AppReceiveDate = as.numeric(as.Date(AppReceiveDate, format = '%m/%d/%Y')) - 16436,
-         LTV = replace(LTV, LTV > 2.5, 2.5),
-         LTV = replace(LTV, is.na(LTV), 1),
-         DTI = replace(DTI, DTI > 0.5 | is.na(DTI), 0.5),
-         OccupancyStatus = replace(OccupancyStatus, is.na(OccupancyStatus), 'OTHER')) %>%
-  transmute(LoanNumber = LoanNumber,
-            AppReceiveDate_cu = AppReceiveDate ** 3,
-            AppReceiveDate_sq = AppReceiveDate ** 2,
-            AppReceiveDate = AppReceiveDate,
-            isCredit_F = as.numeric(ModifiedCreditScore == 0),
-            isCredit_D = as.numeric(ModifiedCreditScore >= 400 & ModifiedCreditScore < 630),
-            isCredit_C = as.numeric(ModifiedCreditScore >= 630 & ModifiedCreditScore < 670),
-            isCredit_B = as.numeric(ModifiedCreditScore >= 670 & ModifiedCreditScore < 740),
-            ModifiedCreditScore_cu = ModifiedCreditScore ** 3,
-            ModifiedCreditScore_sq = ModifiedCreditScore ** 2,
-            ModifiedCreditScore = ModifiedCreditScore,
-            BankruptcyCredit = ModifiedCreditScore * ModifiedBankruptcyScore,
-            ModifiedBankruptcyScore_sq = ModifiedBankruptcyScore **2,
-            ModifiedBankruptcyScore = ModifiedBankruptcyScore,
-            CurrentEmployedMonths_ln = log(1 + EmployedMonths)*as.numeric(EmploymentStatus == 'Employed'),
-            TotalMonthlyIncome_ln = log(1 + TotalMonthlyIncome),
-            isLowDebt = as.numeric(TotalMonthlyDebtBeforeLoan < 300),
-            isUndecided = as.numeric(VehicleMake == 'UNDECIDED'),
-            isHighMileage = as.numeric(VehicleMileage >= 100000),
-            isNewVehicle = as.numeric(isNewVehicle == 'Y'),
-            TotalVehicleValue_ln = log(1 + TotalVehicleValue),
-            AmountRequested = AmountRequested,
-            isHomeowner = as.numeric(OccupancyStatus == "OWN" | OccupancyStatus == 'BUYING'),
-            LTV_sq = LTV ** 2,
-            LTV = LTV,
-            DTI_cu = DTI ** 3,
-            DTI_sq = DTI ** 2,
-            DTI = DTI,
-            MemberIndicator = as.numeric(MemberIndicator == 'Y'),
-            CoApplicantIndicator = as.numeric(CoApplicantIndicator == 'Y'),
-            EstimatedProfit = (Loanterm*EstimatedMonthlyPayment) - AmountRequested,
-            Approved = NA)
-  
-  probabilities <- 1/(1 + exp(-predict(object = model, newdata = df_clean)))
-  decisions <- probabilities %>%
-		replace(list = (probabilities > upper.bound), values = "Approved") %>%
-		replace(list = (probabilities < lower.bound), values = "Declined") %>%
-		replace(list = (probabilities >= lower.bound & probabilities <= upper.bound), values = "No Decision")
-  
-  if (override){
-	  decisions <- replace(decisions, df_clean$EstimatedProfit >= 0 & df_clean$EstimatedProfit <= 1, 'Declined')
-	  decisions <- replace(decisions, df$TotalMonthlyIncome < 1000, 'Declined')
-  }
-  
-  output <- tibble(LoanNumber = df$LoanNumber, Prediction = decisions)
-  return(output)
-}
 ```
 
 ```{r loan decider execution}
