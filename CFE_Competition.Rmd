@@ -20,11 +20,14 @@ train <- read_csv(train_fp)
 
 ```{r data cleaning}
 train <- mutate(train, AppReceiveDate = as.Date(AppReceiveDate, format = '%m/%d/%Y'),
-                      CoMonthlyLiability = as.numeric(CoMonthlyLiability),
-                      CoMonthlyRent = as.numeric(CoMonthlyRent),
-                      isNewVehicle = (isNewVehicle == 'Y'),
-                      MemberIndicator = (MemberIndicator == 'Y'),
-                      CoApplicantIndicator = (CoApplicantIndicator == 'Y'))
+  CoMonthlyLiability = replace(as.numeric(CoMonthlyLiability), is.na(as.numeric(CoMonthlyLiability)), 0),
+  CoMonthlyRent = replace(as.numeric(CoMonthlyRent), is.na(as.numeric(CoMonthlyRent)), 0),
+  isNewVehicle = (isNewVehicle == 'Y'),
+  MemberIndicator = (MemberIndicator == 'Y'),
+  CoApplicantIndicator = (CoApplicantIndicator == 'Y'),
+  IsBalanced = (TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - TotalMonthlyDebtBeforeLoan - EstimatedMonthlyPayment > 0),
+  IsBalanced = replace(IsBalanced, is.na(IsBalanced), FALSE),
+  NoCredit = (ModifiedCreditScore == 0))
 ```
 Note: Many of the numeric variables will not be parsed as numeric due to the way that the data is formatted in the .csv file (ie 100,000 is written as 1.00E+5). Upgrading to the latest version of R will fix this particular issue.
 
@@ -33,6 +36,7 @@ monthly_data <- train %>%
 	mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month')) %>%
 	group_by(AppReceiveMonth) %>%
 	summarize(ApprovalRate = mean(LoanStatus == 'Approved'))
+  mutate(CoMonthlyLiability = replace(CoMonthlyLiability, is.na(CoMonthlyLiability), 0), CoMonthlyRent = replace(CoMonthlyRent, is.na(CoMonthlyRent), 0))
 
 ggplot(monthly_data, mapping = aes(AppReceiveMonth, ApprovalRate)) +
 	geom_line() +
@@ -45,4 +49,53 @@ undecicded_data <- train %>%
 
 ggplot(undecicded_data, aes(AppReceiveDate, VehicleYear, color = isNewVehicle)) +
   geom_point()
+```
+
+```{r credit/bankruptcy scores vs approval}
+ggplot(train, aes(ModifiedCreditScore, ModifiedBankruptcyScore, color = LoanStatus)) + geom_point()
+```
+
+```{r income vs approval}
+ggplot(train, aes(log(1 + PrimeMonthlyIncome), log(1 + CototalMonthlyIncome), color = LoanStatus)) + geom_point()
+```
+
+```{r income/expenses and loan amount vs approval}
+singletons <- train %>% filter(CoApplicantIndicator == FALSE)
+
+ggplot(singletons, aes(PrimeMonthlyIncome - PrimeMonthlyLiability - PrimeMonthlyRent - TotalMonthlyDebtBeforeLoan, AmountRequested, color = LoanStatus)) + geom_point() + ylim(0, 150000) + xlim(-100000, 100000)
+```
+
+```{r income/expenses/loan amt vs approval, co-applicants}
+doubles <- train %>% filter(CoApplicantIndicator == TRUE)
+
+ggplot(doubles, aes(TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyLiability - TotalMonthlyDebtBeforeLoan, AmountRequested, color = LoanStatus)) + geom_point() + ylim(0, 150000) + xlim(-100000, 100000)
+```
+
+```{r loan amount vs vehicle value}
+ggplot(train, aes(log(1 + AmountRequested), log(1 + TotalVehicleValue), color = LoanStatus)) + geom_point()
+```
+
+```{r vehicle make pivot}
+vehicle_make_pivot = train %>%
+  group_by(VehicleMake) %>%
+  summarize('count' = n(), 'average value' = mean(TotalVehicleValue), 'average mileage' = mean(VehicleMileage), 'member proportion' = mean(MemberIndicator == TRUE), 'acceptance rate' = mean(LoanStatus == 'Approved')) %>%
+  filter(count >= 20)
+
+ggplot(vehicle_make_pivot, aes(`average value`, `acceptance rate`, size = count)) + geom_point()
+```
+
+```{r trucks}
+trucks_only <- train %>%
+  filter(VehicleMake == 'CHEVROLET TRUCK' | VehicleMake == 'DODGE TRUCK' | VehicleMake == 'FORD TRUCK') %>%
+  mutate(AppReceiveMonth = floor_date(AppReceiveDate, unit = 'month'))
+
+ggplot(trucks_only, aes(AppReceiveMonth, TotalMonthlyIncome - TotalMonthlyDebtBeforeLoan - PrimeMonthlyRent - PrimeMonthlyLiability, color = VehicleMake, shape = LoanStatus)) + geom_point()
+```
+
+```{r anomaly analysis}
+train_anomaliesByMonth <- train %>%
+  filter(!is.na(NumberOfOpenRevolvingAccounts)) %>%
+  mutate('AppReceiveMonth' = floor_date(AppReceiveDate, unit = 'month'), 'EstimatedNet' = TotalMonthlyIncome - PrimeMonthlyLiability - CoMonthlyLiability - PrimeMonthlyRent - CoMonthlyRent - TotalMonthlyDebtBeforeLoan - EstimatedMonthlyPayment, 'DenialAnomaly' = (EstimatedNet > 0 & ModifiedCreditScore >= 650 & LoanStatus == 'Declined'), 'ApprovalAnomaly' = ((EstimatedNet <= 0 | ModifiedCreditScore < 650) & LoanStatus == 'Approved')) %>%
+  group_by(AppReceiveMonth) %>%
+  summarize('Anomalous Approval Rate' = mean(ApprovalAnomaly == TRUE), 'Anomalous Denial Rate' = mean(DenialAnomaly == TRUE))
 ```
